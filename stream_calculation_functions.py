@@ -23,31 +23,33 @@ from PyQt5.QtCore import Qt
 R = 8.31446261815324  # [J/(mol*K)]
 
 
-def calculate_total_frac(composition_is_defined, composition_table, stream, props_table):
-    for frac_idx in range(1, 3):  # 1 - molar fraction, 2 - mass fraction (cf. composition table)
-        total_frac = 0
-        for row_idx in range(0, len(stream.comps)):  # last row should not be calculated (it is "Total")
-            frac = (composition_table.item(row_idx, frac_idx).text())
-            if frac != "empty":
-                total_frac += float(frac)
-        if 0.9999 <= total_frac <= 1.0001:
-            composition_is_defined = True
-            calc_stream_mol_wt(frac_idx, stream, props_table)
+def calculate_total_frac(composition_is_defined, known_comp_frac, composition_table, stream):
+    # for frac_idx in range(1, 3):  # 1 - molar fraction, 2 - mass fraction (cf. composition table)
+    total_frac = 0
+    for row_idx in range(0, len(stream.comps)):  # last row should not be calculated (it is "Total")
+        frac = (composition_table.item(row_idx, 1).text())
+        if frac != "empty":
+            total_frac += float(frac)
+    if (0.9999 <= total_frac <= 1.0001) and (composition_is_defined == False):
+        composition_is_defined = True
+        calc_stream_mol_wt(known_comp_frac, stream)
 
-        total_frac = str(round(total_frac, 2))
-        total_frac = QTableWidgetItem(total_frac)
-        total_frac.setTextAlignment(Qt.AlignCenter)
-        composition_table.setItem(composition_table.rowCount() - 1, frac_idx, total_frac)
+    total_frac = str(round(total_frac, 3))
+    total_frac = QTableWidgetItem(total_frac)
+    total_frac.setTextAlignment(Qt.AlignCenter)
+    composition_table.blockSignals(True)
+    composition_table.setItem(composition_table.rowCount() - 1, 1, total_frac)
+    composition_table.blockSignals(False)
     return composition_is_defined
 
 
-def calc_stream_mol_wt(known_comp_frac, stream, props_table):
+def calc_stream_mol_wt(known_comp_frac, stream):
     #  known_comp_frac: 1 - molar fraction, 2 - mass fraction (cf. composition table)
     fracs = []
     mol_wts = []
     comps = stream.comps
     for idx in range(0, len(comps)):
-        if known_comp_frac == 1:
+        if (known_comp_frac == "Molar Fraction") or (known_comp_frac == "Мольная доля"):
             comp_frac = float(stream.fracs[f"component {idx + 1}"]["Molar Fraction"])
         else:
             comp_frac = float(stream.fracs[f"component {idx + 1}"]["Mass Fraction"])
@@ -55,29 +57,36 @@ def calc_stream_mol_wt(known_comp_frac, stream, props_table):
         comp_mol_wt = comps[f"component {idx + 1}"].general_info.base_props.mol_wt
         mol_wts.append(comp_mol_wt)
 
-        if known_comp_frac == 1:
-            stream_mol_wt = sum([(mol_wts[i] * fracs[i]) for i in range(len(mol_wts))])
-        else:
-            mass_total = sum(fracs)  # component mass fraction equals the mass of component (cf. calculate mass fractions)
-            amount_of_substance_total = sum([fracs[i] / mol_wts[i] for i in range(len(fracs))])
 
-            stream_mol_wt = mass_total / amount_of_substance_total
-
-        stream.props["Stream Molar Weight [g/mol]"] = stream_mol_wt
-
-        stream_mol_wt = round(stream_mol_wt, 5)
-        stream_mol_wt = QTableWidgetItem(str(stream_mol_wt))
-        stream_mol_wt.setTextAlignment(Qt.AlignCenter)
-        props_table.setItem(0, 1, stream_mol_wt)
-        props_table.resizeColumnsToContents()
-
-
-def calculate_unknown_frac(known_comp_frac_idx, composition_table, stream):
-    # known_comp_frac_idx: 1 - molar fraction, 2 - mass fraction (cf. composition table)
-    if known_comp_frac_idx == 1:
-        unknown_comp_frac_idx = 2
+    if (known_comp_frac == "Molar Fraction") or (known_comp_frac == "Мольная доля"):
+        stream_mol_wt = sum([(mol_wts[i] * fracs[i]) for i in range(len(mol_wts))])
     else:
-        unknown_comp_frac_idx = 1
+        mass_total = sum(fracs)  # component mass fraction equals the mass of component (cf. calculate mass fractions)
+        amount_of_substance_total = sum([fracs[i] / mol_wts[i] for i in range(len(fracs))])
+
+        stream_mol_wt = mass_total / amount_of_substance_total
+
+    stream.props["Stream Molar Weight [g/mol]"] = stream_mol_wt
+
+    # stream_mol_wt = round(stream_mol_wt, 5)
+    # stream_mol_wt = QTableWidgetItem(str(stream_mol_wt))
+    # stream_mol_wt.setTextAlignment(Qt.AlignCenter)
+    # props_table.setItem(0, 1, stream_mol_wt)
+    # props_table.resizeColumnsToContents()
+
+def calc_stream_mol_wt_on_fracs(mol_wts, fracs):
+    return sum([(mol_wts[i] * fracs[i]) for i in range(len(mol_wts))])
+
+def calculate_unknown_frac(known_comp_frac, stream_props_window):
+    stream = stream_props_window.stream
+    table = None
+    # known_comp_frac_idx: 1 - molar fraction, 2 - mass fraction (cf. composition table)
+    if (known_comp_frac == "Molar Fraction") or (known_comp_frac == "Мольная доля"):
+        unknown_comp_frac = "Mass Fraction"
+        table = stream_props_window.ui.mass_composition_table
+    else:
+        unknown_comp_frac = "Molar Fraction"
+        table = stream_props_window.ui.molar_composition_table
 
     #  I use numeric coordinates of cell here, because there is a standard library (or table) with constant location for each property
     # (I agree, it is not universal, but for now it is (p.s. writing a list search is not the easiest way to do it))
@@ -85,27 +94,56 @@ def calculate_unknown_frac(known_comp_frac_idx, composition_table, stream):
         comp_frac = None
         stream_mol_wt = float(stream.props["Stream Molar Weight [g/mol]"])
         comp_mol_wt = float(stream.comps[f"component {idx + 1}"].general_info.base_props.mol_wt)
-        match unknown_comp_frac_idx:
-            case 1:
+        match unknown_comp_frac:
+            case "Molar Fraction" | "Мольная доля":
                 comp_mass_frac = float(stream.fracs[f"component {idx + 1}"]["Mass Fraction"])
                 # assuming that the mass of a substance is 1 g (or kg (doesn't matter, all units will be abbreviated)),
                 # the amounts of the constituents are equal to molar fractions, so the calculations become simpler
-                comp_frac = (comp_mass_frac / comp_mol_wt) / (1 / stream_mol_wt)
+                comp_frac = calc_unknown_mol_frac(comp_mass_frac, comp_mol_wt, stream_mol_wt)
                 stream.fracs[f"component {idx + 1}"]["Molar Fraction"] = comp_frac
-            case 2:
+            case "Mass Fraction" | "Массовая доля":
                 comp_mol_frac = float(stream.fracs[f"component {idx + 1}"]["Molar Fraction"])
                 # assuming that the amount of a substance is 1 mole (or kmol (doesn't matter, all units will be abbreviated)),
                 # the amounts of the constituents are equal to molar fractions, so the calculations become simpler
-                comp_frac = comp_mol_frac * comp_mol_wt / stream_mol_wt
+                comp_frac = calc_unknown_mass_frac(comp_mol_frac, comp_mol_wt, stream_mol_wt)
                 stream.fracs[f"component {idx + 1}"]["Mass Fraction"] = comp_frac
 
-        comp_frac = round(comp_frac, 5)
+        comp_frac = round(comp_frac, 4)
         comp_frac = QTableWidgetItem(str(comp_frac))
         comp_frac.setTextAlignment(Qt.AlignCenter)
-        composition_table.setItem(idx, unknown_comp_frac_idx, comp_frac)
 
+        table.blockSignals(True)
+        table.setItem(idx, 1, comp_frac)
+        table.blockSignals(False)
+    return unknown_comp_frac, table
+
+def calc_unknown_mol_frac(comp_mass_frac, comp_mol_wt, stream_mol_wt):
+    if comp_mass_frac < 0.00001:
+        return 0
+    else:
+        return (comp_mass_frac / comp_mol_wt) / (1 / stream_mol_wt)
+
+def calc_unknown_mass_frac(comp_mol_frac, comp_mol_wt, stream_mol_wt):
+    if comp_mol_frac < 0.00001:
+        return 0
+    else:
+        return comp_mol_frac * comp_mol_wt / stream_mol_wt
+
+def calc_total_frac_for_col(fracs):
+    total_frac = 0
+    for idx in range(len(fracs)):
+        frac = float(fracs[idx])
+        total_frac += frac
+    return total_frac
 
 def calc_bpt(comps, p):
+    """calculation of boiling point temperature at a given pressure (Antoin equation)
+
+        !how to get arguments:
+        comps = components: self.streams[<stream_name> or <variable>].comps  # variable keeps stream name (ex. self.cold_stream
+                                                                                                    self.inlet_cold_stream_name_combobox.currentText())
+        p = given pressure [Pa]"""
+
     bpt = []
     for comp_key in comps.keys():
         a = comps[comp_key].antoine_eq.antoine_eq_coeffs.a
@@ -120,6 +158,9 @@ def calc_bpt(comps, p):
 def calc_IG_mol_vol(p, t):
     v = R * t / p
     return v
+
+
+"""functions for calculating SRK EOS coefficients"""
 
 
 def calc_SRK_m_i(w):
@@ -158,6 +199,7 @@ def calc_Zra_i(w):
 
 
 def calc_c_i(p_c, t_c, z_ra):
+    """Peneloux volume translation"""
     return -0.40768 * R * t_c * (0.29441 - z_ra) / p_c
 
 
@@ -183,39 +225,44 @@ def calc_SRK_mol_vol(p, t, p_c, t_c, mol_fracs, w, phase):
 
     match len(real_roots):
         case 1:
-            if phase == "Vapour":
+            if phase in ["Vapour", "Газ", "Liquid", "Жидкость"]:
                 SRK_mol_vol = max(real_roots)
                 # print(f"[SRK v] {SRK_mol_vol}")
                 return [SRK_mol_vol, a_mix, b_mix]
-            elif phase == "Liquid":
-                SRK_mol_vol = max(real_roots)
-                SRK_mol_vol = SRK_mol_vol + c
-                # print(f"[SRK v] {SRK_mol_vol}")
-                return [SRK_mol_vol, a_mix, b_mix]
+            elif phase in ["Vapour-Liquid", "Газ-Жидкость"]:
+                print("ONE root for vapour_liquid stream!!!")
+                vap_mol_vol = max(real_roots)
+                liq_mol_vol = max(real_roots)
+                return vap_mol_vol, liq_mol_vol
         case 2:
-            if phase == "Vapour":
+            if (phase == "Vapour") or (phase == "Газ"):
                 SRK_mol_vol = max(real_roots)
                 # print(f"[SRK v] {SRK_mol_vol}")
                 return [SRK_mol_vol, a_mix, b_mix]
-            elif phase == "Liquid":
-                print("TWO ROOTS! mol_vol is max of two")
+            elif (phase == "Liquid") or (phase == "Жидкость"):
+                print("TWO ROOTS! liq_mol_vol is min of two")
                 SRK_mol_vol = min(real_roots)
                 SRK_mol_vol = SRK_mol_vol + c
                 # print(f"[SRK v] {SRK_mol_vol}")
                 return [SRK_mol_vol, a_mix, b_mix]
+            elif phase in ["Vapour-Liquid", "Газ-Жидкость"]:
+                vap_mol_vol = max(real_roots)
+                liq_mol_vol = min(real_roots) + c
+                return vap_mol_vol, liq_mol_vol
         case 3:
-            if phase == "Vapour":
+            if (phase == "Vapour") or (phase == "Газ"):
                 SRK_mol_vol = max(real_roots)
                 # print(f"[SRK v] {SRK_mol_vol}")
                 return [SRK_mol_vol, a_mix, b_mix]
-            elif phase == "Liquid":
-                # real_roots.pop(real_roots.index(max(real_roots)))
-                # real_roots.pop(real_roots.index(min(real_roots)))
-                # print(f"[real roots without max and min] {real_roots}")
+            elif (phase == "Liquid") or (phase == "Жидкость"):
                 SRK_mol_vol = min(real_roots)
                 SRK_mol_vol = SRK_mol_vol + c
                 # print(f"[SRK v] {SRK_mol_vol}")
                 return [SRK_mol_vol, a_mix, b_mix]
+            elif phase in ["Vapour-Liquid", "Газ-Жидкость"]:
+                vap_mol_vol = max(real_roots)
+                liq_mol_vol = min(real_roots) + c
+                return vap_mol_vol, liq_mol_vol
 
 
 def calc_density(stream_mol_wt, mol_vol):
@@ -226,32 +273,49 @@ def calc_density(stream_mol_wt, mol_vol):
 
 
 def calc_IG_gas_h_cap(comps, mol_fracs, t):
-    try:
-        h_caps = []
-        for comp_key in comps.keys():
-            a = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.a
-            b = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.b
-            c = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.c
-            d = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.d
-            e = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.e
-            comp_coeffs = [a, b, c, d, e]
+    """calculation of the stream heat capacity (if all comps are in the vapour phase)
 
-            comp_h_cap = 0
-            for idx in range(len(comp_coeffs)):
-                comp_h_cap += comp_coeffs[idx] * (t ** idx)
-            h_caps.append(comp_h_cap)
+        !how to get arguments:
+        comps = components: self.streams[<stream_name> or <variable>].comps  # variable keeps stream name (ex. self.cold_stream
+                                                                                                    self.inlet_cold_stream_name_combobox.currentText())
+        mol_fracs = molar fractions: self.streams[<stream_name> or <variable>].fracs => fracs
+                                     np.array([float(fracs[f"component {i + 1}"]["Molar Fraction"]) for i in range(len(fracs))])
+        t = temperature"""
 
-        h_caps = np.array(h_caps)
-        # vol fracs = mol fracs (ideal gas) (followed the formula, although it was possible to simply multiply by mole fractions)
-        vol_fracs = mol_fracs
+    h_caps = []
+    for comp_key in comps.keys():
+        a = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.a
+        b = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.b
+        c = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.c
+        d = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.d
+        e = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.e
+        comp_coeffs = [a, b, c, d, e]
 
-        total_h_cap = sum(list(np.multiply(h_caps, vol_fracs)))
-        return total_h_cap, h_caps
-    except:
-        traceback.print_exc()
+        comp_h_cap = 0
+        for idx in range(len(comp_coeffs)):
+            comp_h_cap += comp_coeffs[idx] * (t ** idx)
+        h_caps.append(comp_h_cap)
+
+    h_caps = np.array(h_caps)
+    # vol fracs = mol fracs (ideal gas) (followed the formula, although it was possible to simply multiply by mole fractions)
+    vol_fracs = mol_fracs
+
+    total_h_cap = sum(list(np.multiply(h_caps, vol_fracs)))
+    return total_h_cap, h_caps
 
 
 def calc_gas_viscosity(t, stream_mol_wt, mol_fracs, mol_wts):
+    """calculation of the stream viscosity (if all comps are in the vapour phase)
+
+        !how to get arguments:
+        t = temperature
+        stream_mol_wt = stream molar weight: self.streams[<stream_name> or <variable>] => stream
+                                             stream.props["Stream Molar Weight [g/mol]"]
+        mol_fracs = molar fractions: self.streams[<stream_name> or <variable>].fracs => fracs
+                                     np.array([float(fracs[f"component {i + 1}"]["Molar Fraction"]) for i in range(len(fracs))])
+        mol_wts = molar weights: self.streams[<stream_name> or <variable>].comps
+                                 np.array([(float(comps[f"component {i + 1}"].general_info.base_props.mol_wt)) for i in range(len(comps))])"""
+
     # vol fracs = mol fracs (ideal gas)
     vol_fracs = mol_fracs
     viscosities = []
@@ -264,6 +328,18 @@ def calc_gas_viscosity(t, stream_mol_wt, mol_fracs, mol_wts):
 
 
 def calc_gas_therm_cond(h_caps, viscosities, mol_fracs, mol_wts):
+    """calculation of the stream thermal conductivity (if all comps are in the vapour phase)
+
+        !how to get arguments:
+        h_caps = each component heat capacity [np.array]
+        viscosities = each component viscosity [np.array]
+        stream_mol_wt = stream molar weight: self.streams[<stream_name> or <variable>] => stream
+                                             stream.props["Stream Molar Weight [g/mol]"]
+        mol_fracs = molar fractions: self.streams[<stream_name> or <variable>].fracs => fracs
+                                     np.array([float(fracs[f"component {i + 1}"]["Molar Fraction"]) for i in range(len(fracs))])
+        mol_wts = molar weights: self.streams[<stream_name> or <variable>].comps
+                                 np.array([(float(comps[f"component {i + 1}"].general_info.base_props.mol_wt)) for i in range(len(comps))])"""
+
     comps_mol_Cv = np.array([(Cp - R) for Cp in h_caps])
     adiabatic_parameters = [(h_caps[i] / comps_mol_Cv[i]) for i in range(len(h_caps))]
     B_coeffs = np.array([((9 * adiabatic_parameters[i] - 5) / 4) for i in range(len(adiabatic_parameters))])
@@ -276,8 +352,8 @@ def calc_gas_therm_cond(h_caps, viscosities, mol_fracs, mol_wts):
     return total_therm_cond
 
 
-def calc_heat_of_vaporization(bpt):
-    return (36.63 + 19.13 * np.log10(bpt)) * bpt
+def calc_heat_of_vaporization(bpt, mol_wts):
+    return (36.63 + 19.13 * np.log10(bpt)) * bpt / mol_wts
 
 
 def func_gas_h_cap_for_integrate(t, coeffs):
@@ -287,11 +363,12 @@ def func_gas_h_cap_for_integrate(t, coeffs):
     return res
 
 
-def func_liq_h_cap_for_integrate(t, t_c, w):
+def func_liq_h_cap_for_integrate(t, t_c, w):  # есть проблемы если поток при отрицательных температурах
     t_ri = t / t_c
     res = (1.45 + 0.45 * ((1 - t_ri) ** (-1)) + 0.25 * w * (
-                17.11 + 25.2 * ((1 - t_ri) ** (1 / 3)) * (t_ri ** (-1)) + 1.742 * ((1 - t_ri) ** (-1)))) * R
+            17.11 + 25.2 * ((1 - t_ri) ** (1 / 3)) * (t_ri ** (-1)) + 1.742 * ((1 - t_ri) ** (-1)))) * R
     return res
+
 
 def calc_gas_enthalpy(t, comps, h_f, mol_fracs, stream_mol_wt):
     comps_gas_h_caps = []
@@ -310,37 +387,37 @@ def calc_gas_enthalpy(t, comps, h_f, mol_fracs, stream_mol_wt):
     return H
 
 
-def calc_liquid_enthalpy(t, comps, h_f, mol_fracs, t_c, bpt, mol_wts, stream_mol_wt, w):
-
-    bpt = np.array(bpt) + 273.15
+def calc_liquid_enthalpy(t, comps, h_f, mol_fracs, t_c, bpt, mass_fracs, mol_wts, stream_mol_wt, w):
+    bpt = list(np.array(bpt) + 273.15)
 
     comps_gas_h_caps = []
     comps_liq_h_caps = []
-    i = 0
-    for comp_key in comps.keys():
+
+    for idx, comp_key in enumerate(list(comps.keys())):
         a = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.a
         b = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.b
         c = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.c
         d = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.d
         e = comps[comp_key].h_cap.ig_gas_h_cap_empiric_coeffs.e
         comps_coeffs = np.array([a, b, c, d, e])
-
-        comps_gas_h_caps.append(quad(func_gas_h_cap_for_integrate, 298.15, bpt[i], args=(comps_coeffs))[0])
-        gas_h_caps_for_liq = quad(func_gas_h_cap_for_integrate, bpt[i], t, args=(comps_coeffs))[0]
-        liq_h_caps_for_liq = quad(func_liq_h_cap_for_integrate, bpt[i], t, args=(t_c[i], w[i]))[0]
+        # we make enthalpy negative as in hysys, so we integrate in the opposite direction
+        comps_gas_h_caps.append(quad(func_gas_h_cap_for_integrate, 298.15, bpt[idx], args=(comps_coeffs))[0])
+        gas_h_caps_for_liq = quad(func_gas_h_cap_for_integrate, bpt[idx], t, args=(comps_coeffs))[0]
+        liq_h_caps_for_liq = quad(func_liq_h_cap_for_integrate, bpt[idx], t, args=(t_c[idx], w[idx]))[0]
         comps_liq_h_caps.append(gas_h_caps_for_liq + liq_h_caps_for_liq)
-        i += 1
+
     comps_gas_h_caps = np.array(comps_gas_h_caps)
     comps_liq_h_caps = np.array(comps_liq_h_caps)
+    # print(f"[H_f] {h_f}")
     # print(f"[comps_gas_h_caps] {comps_gas_h_caps}")
     # print(f"[comps_liq_h_caps] {comps_liq_h_caps}")
-    h_vap = (-1) * calc_heat_of_vaporization(bpt)  # just like Hysys is negative
+    h_vap = (-1) * calc_heat_of_vaporization(bpt, mol_wts)  # just like Hysys is negative [kJ/kg]
     # print(f"[h_vap] {h_vap}")
 
-    H = h_f + comps_gas_h_caps + h_vap + comps_liq_h_caps
-    H = sum(H * mol_fracs) / stream_mol_wt
+    H = h_f + comps_gas_h_caps + comps_liq_h_caps
+    # print(f"[H] {H}")
+    H = (sum(H * mol_fracs) / stream_mol_wt) + sum(h_vap * mass_fracs)
     return H
-
 
 
 def calc_density20_4(stream_mol_wt, p_c, t_c, mol_fracs, w, phase):
@@ -362,75 +439,126 @@ def calc_characterizing_factor(avg_bpt, density15_15):
 
 
 def calc_liquid_h_cap(t, t_c, w, mol_fracs, comps):
-    try:
-        t_c = np.array(t_c) + 273.15
-        t_ri = t / t_c
-        comps_h_caps = (1.45 + 0.45 * ((1 - t_ri) ** (-1)) + 0.25 * w * (17.11 + 25.2 * ((1 - t_ri) ** (1 / 3)) * (t_ri ** (-1)) + 1.742 * ((1 - t_ri) ** (-1)))) * R
-        ig_h_cap, ig_h_caps = calc_IG_gas_h_cap(comps, mol_fracs, t)
+    """calculation of the stream heat capacity (if all comps are in the liquid phase)
 
-        comps_h_caps = comps_h_caps + ig_h_caps
-        # print(f"[comp_h_caps] {comps_h_caps}")
-        total_h_cap = sum(mol_fracs * comps_h_caps)
-        return total_h_cap
-    except:
-        traceback.print_exc()
+        !how to get arguments:
+        t = temperature
+        comps = components: self.streams[<stream_name> or <variable>].comps
+        t_c = critical temperature [np.array]: np.array([(float(comps[f"component {i + 1}"].general_info.critical_props.critical_T)) for i in range(len(comps))])
+        w = each component acentricity [np.array]: np.array([float(comps[f"component {i + 1}"].general_info.critical_props.acentricity) for i in range(len(comps))])
+        mol_fracs = molar fractions: self.streams[<stream_name> or <variable>].fracs => fracs
+                                     np.array([float(fracs[f"component {i + 1}"]["Molar Fraction"]) for i in range(len(fracs))])"""
+
+    t_c = np.array(t_c) + 273.15
+    t_ri = t / t_c
+    comps_h_caps = (1.45 + 0.45 * ((1 - t_ri) ** (-1)) + 0.25 * w * (
+                17.11 + 25.2 * ((1 - t_ri) ** (1 / 3)) * (t_ri ** (-1)) + 1.742 * ((1 - t_ri) ** (-1)))) * R
+    ig_h_cap, ig_h_caps = calc_IG_gas_h_cap(comps, mol_fracs, t)
+
+    comps_h_caps = comps_h_caps + ig_h_caps
+    # print(f"[comp_h_caps] {comps_h_caps}")
+    total_h_cap = sum(mol_fracs * comps_h_caps)
+    return total_h_cap
 
 
 def calc_liquid_viscosity(comps, mass_fracs, t):
-    try:
-        comps_viscosities = []
-        for comp_key in comps.keys():
-            a = comps[comp_key].viscosity.liquid_viscosity_coeffs.a
-            b = comps[comp_key].viscosity.liquid_viscosity_coeffs.b
-            c = comps[comp_key].viscosity.liquid_viscosity_coeffs.c
-            d = comps[comp_key].viscosity.liquid_viscosity_coeffs.d
-            comp_coeffs = [a, b, c, d]
+    """calculation of the stream viscosity (if all comps are in the liquid phase)
 
-            comp_viscosity = 10 ** (comp_coeffs[0] + (comp_coeffs[1] / t) + comp_coeffs[2] * t + comp_coeffs[3] * (t ** 2))
-            comps_viscosities.append(comp_viscosity)
-        comps_viscosities = np.array(comps_viscosities)  # [cP = mPa*s]
-        # print(f"[comps_viscosities] {comps_viscosities}")
+        !how to get arguments:
+        t = temperature
+        comps = components: self.streams[<stream_name> or <variable>].comps
+        mass_fracs = mass fractions: self.streams[<stream_name> or <variable>].fracs => fracs
+                                     np.array([float(fracs[f"component {i + 1}"]["Mass Fraction"]) for i in range(len(fracs))])"""
 
-        total_viscosity = ((sum(mass_fracs * (comps_viscosities ** (1 / 3)))) ** 3)/1000
-        # print(f"[total_viscosity] {total_viscosity}")
-        return total_viscosity
-    except:
-        traceback.print_exc()
+    comps_viscosities = []
+    for comp_key in comps.keys():
+        a = comps[comp_key].viscosity.liquid_viscosity_coeffs.a
+        b = comps[comp_key].viscosity.liquid_viscosity_coeffs.b
+        c = comps[comp_key].viscosity.liquid_viscosity_coeffs.c
+        d = comps[comp_key].viscosity.liquid_viscosity_coeffs.d
+        comp_coeffs = [a, b, c, d]
 
-def calc_liquid_therm_cond(mol_wt, t, bpt, t_c, mass_fracs):
-    try:
-        bpt, t_c = np.array(bpt) + 273.15, np.array(t_c) + 273.15
-        t_ri = t / t_c
-        t_bri = bpt / t_c
-        comps_therm_conds = (1.1053152 / (mol_wt ** 0.5)) * ((3 + 20 * ((1 - t_ri) ** (2 / 3))) / (3 + 20 * ((1 - t_bri) ** (2 / 3))))
-        # print(f"[comps_therm_conds] {comps_therm_conds}")
-        therm_cond = sum(comps_therm_conds * mass_fracs)
-        return therm_cond
-    except:
-        traceback.print_exc()
+        comp_viscosity = 10 ** (comp_coeffs[0] + (comp_coeffs[1] / t) + comp_coeffs[2] * t + comp_coeffs[3] * (t ** 2))
+        comps_viscosities.append(comp_viscosity)
+    comps_viscosities = np.array(comps_viscosities)  # [cP = mPa*s]
+    # print(f"[comps_viscosities] {comps_viscosities}")
+
+    total_viscosity = ((sum(mass_fracs * (comps_viscosities ** (1 / 3)))) ** 3) / 1000
+    # print(f"[total_viscosity] {total_viscosity}")
+    return total_viscosity
 
 
-# def calc_liquid_viscosity20(t, p, normal_bpt, density20_4, mol_wts):
-#     t20_k = (normal_bpt + 273) / 293.15
-#     # for alkanes
-#     f, a0, a1, a2, a3, a4 = 0.21, 1.43, -1.61, 1.55, 1, 0
-#
-#     viscosity20 = f * (t20_k ** (a0 + (a1 / t20_k) + (a2 * t20_k) + (a3 * density20_4) + (a4 * (density20_4 ** 2))))
-#     print(viscosity20)
-#
-#     t20 = (t + 273) / 293.15
-#     pi = p / 101325
-#     # for alkanes
-#     alpha0, alpha1, alpha2, alpha3, beta0, beta1 = -2.2, -0.6, 0.3, 0, -0.026, 0.0005
-#
-#     viscosity20_tp = viscosity20 * (t20 ** (alpha0 + (alpha1 * t20) + (alpha2 * density20_4))) * (pi ** (beta0 + (beta1 * pi)))
-#     print(viscosity20_tp)
-#
-#     t_t = (1.02 * (10 ** (-6)) * (mol_wts ** 1.87)) + (5.48 * (10 ** (-3)))
-#     t_p = (4.24 * (10 ** (-5)) * mol_wts) + (6.82 * (10 ** (-3)))
-#
-#     viscosity20_tp2 = viscosity20 * ((np.exp(t_p * ((p / (10 ** 6)) - 0.101))) / (np.exp(t_t * (t - 20))))
-#     print(viscosity20_tp2)
-#     return viscosity20_tp
 
+def calc_liquid_therm_cond(mol_wts, t, bpt, t_c, mass_fracs):
+    """calculation of the stream viscosity (if all comps are in the liquid phase)
 
+        !how to get arguments:
+        t = temperature
+        comps = components: self.streams[<stream_name> or <variable>].comps
+        bpt = boiling point temperature: np.array([float(comps[f"component {i + 1}"].general_info.base_props.normal_bpt) for i in range(len(comps))])
+        t_c = critical temperature [np.array]: np.array([(float(comps[f"component {i + 1}"].general_info.critical_props.critical_T)) for i in range(len(comps))])
+        mol_wts = molar weights: np.array([(float(comps[f"component {i + 1}"].general_info.base_props.mol_wt)) for i in range(len(comps))])
+        mass_fracs = mass fractions: self.streams[<stream_name> or <variable>].fracs => fracs
+                                     np.array([float(fracs[f"component {i + 1}"]["Mass Fraction"]) for i in range(len(fracs))])"""
+
+    bpt, t_c = np.array(bpt) + 273.15, np.array(t_c) + 273.15
+    t_ri = t / t_c
+    t_bri = bpt / t_c
+    comps_therm_conds = (1.1053152 / (mol_wts ** 0.5)) * ((3 + 20 * ((1 - t_ri) ** (2 / 3))) / (3 + 20 * ((1 - t_bri) ** (2 / 3))))
+    # print(f"[comps_therm_conds] {comps_therm_conds}")
+    therm_cond = sum(comps_therm_conds * mass_fracs)
+    return therm_cond
+
+def calc_vapour_frac(t, p, mol_fracs, coeffs):
+    """
+    args:
+    t = temperature [Kelvin]
+    p = pressure [mmHg]
+    mol_fracs = array of component molar fractions
+    coeffs = array of component Antoine coefficients
+
+    p_sat = saturated vapour pressure [mmHg]
+    k_i = array of equilibrium coefficients
+    x_i = array of component molar fractions of the liquid stream
+    y_i = array of component molar fractions of the vapour stream
+    f = vapour fraction (f = Vapour/Feed)
+    """
+    p_sat = []
+    for comp_coeffs in coeffs:
+        p_sat.append(np.exp(comp_coeffs[0] - (comp_coeffs[1] / (comp_coeffs[2] + t))))
+    p_sat = np.array(p_sat)
+    k_i = p_sat / p
+    print(f"[k_i] {k_i}")
+
+    x, y, ln_x, ln_y, x_i, y_i = 0, 0, 1, 1, None, None
+    accuracy = 0.0005
+    f_start, f_end, f_guess, counter = 0, 1, 0, 0
+    while not ((abs(ln_x) < accuracy) and (abs(ln_y) < accuracy)):
+        f_guess = (f_start + f_end) / 2
+        counter += 1
+        x_i = mol_fracs / (1 + (k_i - 1) * f_guess)
+        x = sum(x_i)
+        ln_x = np.log(x)
+        y_i = k_i * x_i
+        y = sum(y_i)
+        ln_y = np.log(y)
+        # print(f"f = {f_guess}, x = {x}, y = {y}")
+        if x < 1:
+            f_start = f_guess
+        else:
+            f_end = f_guess
+        if (f_guess > 0.9999) or (f_guess < 0.0001):
+            break
+    print(f"[finish] f = {f_guess}, x = {x}, y = {y}, counter = {counter}")
+
+    if f_guess > 0.9999:
+        vapour_frac = 1
+        y = 1
+        x, x_i = 0, [0.000000000001 for _ in range(len(x_i))]
+    elif f_guess < 0.0001:
+        vapour_frac = 0
+        y, y_i = 0, [0.000000000001 for _ in range(len(y_i))]
+        x = 1
+    else:
+        vapour_frac = f_guess
+    return vapour_frac, x, y, x_i, y_i

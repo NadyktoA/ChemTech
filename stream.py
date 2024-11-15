@@ -16,9 +16,16 @@ class Stream:
         self.chosen_comps = chosen_comps
 
         self.comps = {}
+
         self.conds = {}
+
         self.fracs = {}
+        self.vap_phase_fracs = {}
+        self.liq_phase_fracs = {}
+
         self.props = {}
+        self.vap_phase_props = {}
+        self.liq_phase_props = {}
 
         self.fill_in_stream_props()
 
@@ -39,10 +46,18 @@ class Stream:
             # adding a component to components_dict under the name "component X"
             comp_num = f"component {str(idx + 1)}"
             self.comps[comp_num] = self.chosen_comps[comp_keys[idx]]
+
             self.fracs[comp_num] = {}
             self.fracs[comp_num]["Molar Fraction"] = "empty"
             self.fracs[comp_num]["Mass Fraction"] = "empty"
 
+            self.vap_phase_fracs[comp_num] = {}
+            self.vap_phase_fracs[comp_num]["Molar Fraction"] = "empty"
+            self.vap_phase_fracs[comp_num]["Mass Fraction"] = "empty"
+
+            self.liq_phase_fracs[comp_num] = {}
+            self.liq_phase_fracs[comp_num]["Molar Fraction"] = "empty"
+            self.liq_phase_fracs[comp_num]["Mass Fraction"] = "empty"
 
     def fill_in_props(self):
         self.props_names = ["Stream Molar Weight [g/mol]",
@@ -54,3 +69,5 @@ class Stream:
                             "Thermal Conductivity [W/m-K]"]
         for prop in self.props_names:
             self.props[prop] = "empty"
+            self.vap_phase_props[prop] = "empty"
+            self.liq_phase_props[prop] = "empty"
